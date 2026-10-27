@@ -5,7 +5,7 @@ import { repoRoot } from '../config.js';
 import { closeDatabase, getDatabase, type Database } from './index.js';
 import { logger } from '../lib/logger.js';
 
-const migrationsDir = path.join(repoRoot, 'server', 'migrations');
+const migrationsDir = path.join(repoRoot, 'backend', 'migrations');
 
 export async function runMigrations(db: Database): Promise<string[]> {
   await db.exec(`create table if not exists schema_migrations (

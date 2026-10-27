@@ -10,12 +10,12 @@ different hostnames is **not** supported without extra work, because sessions us
 
 ```
 Internet ──HTTPS──> nginx / Caddy ──HTTP──> Node (Express + SPA) ──> PostgreSQL
-                                              └─ server/uploads (persistent disk)
+                                              └─ backend/uploads (persistent disk)
 ```
 
 - Node.js 20+ (tested on 24), npm 10+.
 - PostgreSQL 14 or newer (13+ already provides `gen_random_uuid()`).
-- A writable, persistent `server/uploads` directory.
+- A writable, persistent `backend/uploads` directory.
 - Public DNS + a TLS certificate for the storefront/API origin.
 
 ## 1. Build the release
@@ -24,16 +24,16 @@ On CI or the server:
 
 ```bash
 npm ci
-npm run build          # type-checks client, builds client/dist, compiles server/dist
+npm run build          # type-checks client, builds frontend/dist, compiles backend/dist
 ```
 
 The build output is:
 
-- `client/dist/` — storefront SPA and static assets (served by Express)
-- `server/dist/` — compiled API and CLI scripts
+- `frontend/dist/` — storefront SPA and static assets (served by Express)
+- `backend/dist/` — compiled API and CLI scripts
 
 Ship both directories with `package.json`, `package-lock.json` and the runtime
-`node_modules`. If `client/dist/index.html` is missing, the server still starts
+`node_modules`. If `frontend/dist/index.html` is missing, the server still starts
 API-only and logs a warning, but the storefront will not render.
 
 ## 2. Provision PostgreSQL and the RLS role
@@ -57,7 +57,7 @@ Set `DATABASE_URL` for the owner/login role, then apply migrations:
 
 ```bash
 DATABASE_URL='postgres://...?...' NODE_ENV=production \
-  node server/dist/db/migrate.js
+  node backend/dist/db/migrate.js
 ```
 
 Migration `002_rls.sql` creates `nilemart_app nologin` if it does not exist and
@@ -95,7 +95,7 @@ NODE_ENV=production DATABASE_URL='postgres://...' \
 ADMIN_EMAIL='ops@example.com' \
 ADMIN_PASSWORD='a-long-unique-password' \
 ADMIN_NAME='Operations lead' \
-  node server/dist/db/create-admin.js
+  node backend/dist/db/create-admin.js
 ```
 
 The script applies pending migrations, hashes the password with scrypt, marks the
@@ -188,7 +188,7 @@ User=nilemart
 Group=nilemart
 WorkingDirectory=/srv/nilemart
 EnvironmentFile=/etc/nilemart.env
-ExecStart=/usr/bin/node server/dist/index.js
+ExecStart=/usr/bin/node backend/dist/index.js
 Restart=always
 RestartSec=5
 # The server handles SIGTERM and drains connections for up to 10 seconds.
@@ -196,7 +196,7 @@ TimeoutStopSec=20
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/srv/nilemart/server/uploads
+ReadWritePaths=/srv/nilemart/backend/uploads
 ProtectHome=true
 
 [Install]
@@ -205,7 +205,7 @@ WantedBy=multi-user.target
 
 ```bash
 sudo useradd --system --home /srv/nilemart --shell /usr/sbin/nologin nilemart
-sudo mkdir -p /srv/nilemart/server/uploads
+sudo mkdir -p /srv/nilemart/backend/uploads
 sudo chown -R nilemart:nilemart /srv/nilemart
 sudo systemctl daemon-reload
 sudo systemctl enable --now nilemart
@@ -267,17 +267,17 @@ server {
 ## 6. Uploads
 
 Admin image uploads (PNG, JPEG, WebP, AVIF, GIF; max 5 MB, content signature
-checked) are written to `server/uploads` with UUID filenames and served with a
+checked) are written to `backend/uploads` with UUID filenames and served with a
 30-day immutable cache.
 
-- Keep `server/uploads` on persistent disk (or a shared volume) and include it
+- Keep `backend/uploads` on persistent disk (or a shared volume) and include it
   in backups. A container filesystem without a volume will lose product images.
   Set `UPLOADS_DIR` when the volume is mounted elsewhere (for example
   `/data/uploads`).
 - If you run more than one API instance, mount a shared volume; local uploads are
   not replicated. Object storage would require an adapter that does not exist
   yet.
-- Seed product images live in `server/uploads/seed` and are only needed when the
+- Seed product images live in `backend/uploads/seed` and are only needed when the
   development seed is used.
 
 ## 7. Payments and webhooks
@@ -311,14 +311,14 @@ supports SPF/DKIM for your sending domain, and monitor `ORDER_NOTIFICATION_EMAIL
 - **Database** — nightly `pg_dump -Fc` plus provider PITR if available:
   `pg_dump -Fc --no-owner -f nilemart-$(date +%F).dump "$DATABASE_URL"`.
   Keep copies off-host and test a restore periodically.
-- **Uploads** — snapshot or `rsync` the `server/uploads` volume alongside each
+- **Uploads** — snapshot or `rsync` the `backend/uploads` volume alongside each
   database backup so image references stay valid.
 - **Secrets** — back up `/etc/nilemart.env` in your secrets manager, not in git.
 - **Restore** — restore the database first, then uploads, then start the app.
   Migrations are forward-only; there are no down migrations. To roll back a bad
   release, restore the database backup (or ship a corrective migration) and the
   matching uploads snapshot.
-- PGlite (`server/data`) is a development engine and is single-process. Do not
+- PGlite (`backend/data`) is a development engine and is single-process. Do not
   use it for production traffic, and only copy its directory while the API is
   stopped.
 
@@ -336,7 +336,7 @@ supports SPF/DKIM for your sending domain, and monitor `ORDER_NOTIFICATION_EMAIL
 - [ ] Database backups and uploads backups scheduled and restored at least once
       into a staging environment.
 - [ ] Payment secrets exist only in the server environment; no gateway key in
-      `client/` or browser bundles.
+      `frontend/` or browser bundles.
 - [ ] Chapa sandbox acceptance test completed before using live keys.
 - [ ] Rate limits unchanged unless you understand the traffic profile; keep
       `RATE_LIMIT_WINDOW_MS` aligned with the proxy.

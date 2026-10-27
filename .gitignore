@@ -3,12 +3,12 @@ dist/
 coverage/
 .env
 .env.local
-server/data/
-server/uploads/*
-!server/uploads/.gitkeep
+backend/data/
+backend/uploads/*
+!backend/uploads/.gitkeep
 *.log
 .DS_Store
 Thumbs.db
-# Raw image-generation sources (the optimized assets live in client/public and
-# server/uploads/seed)
+# Raw image-generation sources (the optimized assets live in frontend/public and
+# backend/uploads/seed)
 vibe_images/

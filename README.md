@@ -46,7 +46,7 @@ npm run dev                   # API on :4000, storefront on :5173
 ```
 
 Open <http://localhost:5173>. On first start the embedded database
-(`server/data`) is migrated and seeded with demo content.
+(`backend/data`) is migrated and seeded with demo content.
 
 ### Development accounts
 
@@ -72,8 +72,8 @@ production (see [docs/deployment.md](docs/deployment.md)).
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Run API and Vite dev server together |
-| `npm run build` | Type-check and build client, then compile the server |
-| `npm start` | Run the compiled server (serves the API, uploads and the built SPA) |
+| `npm run build` | Type-check and build the frontend, then compile the backend |
+| `npm start` | Run the compiled backend (serves the API, uploads and the built SPA) |
 | `npm run typecheck` | Type-check both workspaces |
 | `npm test` | Integration tests against an isolated temporary PostgreSQL |
 | `npm run db:migrate` | Apply pending migrations |
@@ -87,13 +87,13 @@ to be stopped, because embedded PGlite allows one process per data directory).
 ## Repository layout
 
 ```
-client/                 React storefront + admin SPA
+frontend/               React storefront + admin SPA
   src/pages/            Storefront, account, checkout, admin pages
   src/components/       Layout, UI primitives and admin shell
   src/lib/              API client, formatting, SEO, admin query hooks
   src/stores/           Zustand auth and cart stores
   public/               Static assets, favicon, OG image
-server/
+backend/
   migrations/           Numbered SQL: schema, RLS, reference data
   src/routes/           Storefront, auth, cart, checkout, orders, account,
                         wishlist, webhooks, SEO, admin/*
@@ -178,7 +178,7 @@ The integration suite starts an isolated temporary PGlite database, applies all
 migrations, seeds it, and exercises health/SEO endpoints, storefront reads, the
 origin guard, session cookie flags, authentication failures, RBAC/RLS
 boundaries for several staff roles, and a full cash-on-delivery checkout
-(stock reservation, totals, idempotent replay). It never touches `server/data`
+(stock reservation, totals, idempotent replay). It never touches `backend/data`
 or a `DATABASE_URL` database. Tests run single-file in a single process because
 PGlite is single-process.
 

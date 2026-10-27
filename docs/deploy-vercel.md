@@ -10,10 +10,10 @@ the stock-reservation sweep, and request bodies up to 5 MB.
 Browser
   │  https://shop.example.com
   ▼
-Vercel (client/dist, SPA rewrites)
+Vercel (frontend/dist, SPA rewrites)
   │  /api/*, /uploads/*, /robots.txt, /sitemap.xml  →  proxy
   ▼
-Railway (server/dist, Express, uploads volume, cron sweep)
+Railway (backend/dist, Express, uploads volume, cron sweep)
   │
   ▼
 Neon PostgreSQL (RLS enforced)
@@ -33,13 +33,13 @@ with the real API domain in step 3.
 1. Create a Neon project and copy the **direct** connection string (not the
    pooled one). It looks like
    `postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require`.
-2. Install, build the server, and apply migrations from the repository root:
+2. Install, build the backend, and apply migrations from the repository root:
 
    ```bash
    npm ci
-   npm run build -w server
+   npm run build -w backend
    DATABASE_URL='postgresql://.../neondb?sslmode=require' \
-     NODE_ENV=production node server/dist/db/migrate.js
+     NODE_ENV=production node backend/dist/db/migrate.js
    ```
 
    Migration `002_rls.sql` creates the restricted `nilemart_app` role and all
@@ -61,10 +61,12 @@ with the real API domain in step 3.
    rollback;
    ```
 
-   If `set local role` fails, grant membership once from the Neon SQL editor:
+   If `set local role` fails, grant membership once from the Neon SQL editor.
+   The `SET TRUE` clause is required: a grant created with `SET FALSE` reports
+   `pg_has_role(...) = true` yet still fails at runtime.
 
    ```sql
-   grant nilemart_app to <your_neon_login>;
+   grant nilemart_app to <your_neon_login> with set true;
    ```
 
 4. Create the first administrator. Demo seeding is refused in production:
@@ -75,7 +77,7 @@ with the real API domain in step 3.
      ADMIN_EMAIL='ops@example.com' \
      ADMIN_PASSWORD='a-long-unique-password' \
      ADMIN_NAME='Operations lead' \
-     node server/dist/db/create-admin.js
+     node backend/dist/db/create-admin.js
    ```
 
    Do not run `db:seed` or `db:reset` against production.
@@ -89,13 +91,13 @@ Create a Railway project from the same repository.
 **Build**
 
 ```bash
-npm ci --include=dev && npm run build -w server
+npm ci --include=dev && npm run build -w backend
 ```
 
 **Start**
 
 ```bash
-node server/dist/db/migrate.js && node server/dist/index.js
+node backend/dist/db/migrate.js && node backend/dist/index.js
 ```
 
 Migrations are idempotent, so running them on boot is safe. Keep a single API
@@ -106,7 +108,7 @@ reservation sweep is designed for one instance.
 
 **Volume:** mount a volume at `/data` and set `UPLOADS_DIR=/data/uploads`.
 Admin product images then survive redeploys. The development seed images in
-`server/uploads/seed` are not used in production.
+`backend/uploads/seed` are not used in production.
 
 **Variables**
 
@@ -216,23 +218,24 @@ Then in a browser:
 
 ## Troubleshooting the first deploy
 
-**A push creates two deployments named `client` and `server`.** That means two
-separate Vercel projects were created (one per workspace). This app needs a
-single project at the repository root; the `server` project can never succeed as
-a static/Vite deployment. Delete or ignore the extra projects, keep one project
-with **Root Directory = repository root**, and run the API on Railway.
+**A push creates two failed deployments named `client` and `server`.** Those are
+two old Vercel projects created one per workspace before the repository was
+restructured. This app needs a single project at the repository root; the
+`server` project can never succeed as a static/Vite deployment because the
+Express API belongs on Railway. Delete or ignore both projects, keep one project
+with **Root Directory = repository root**, and deploy the API separately.
 
-**The `client` project fails on `vite.config.ts`.** The error looks like
-`Cannot find name 'process'` or `Cannot find name 'node:url'`. It happens when
-the project root is `client/`, so the workspace-hoisted `@types/node` is not
-installed. Two fixes:
+**A standalone workspace project fails on `vite.config.ts`.** The error looks
+like `Cannot find name 'process'` or `Cannot find name 'node:url'`. It happens
+when the project root is `frontend/`, so the workspace-hoisted `@types/node` is
+not installed. Two fixes:
 
 - preferred: point the project's Root Directory at the repository root so
   `vercel.json` and the workspace lockfile are used; or
 - keep the standalone project and rely on the `@types/node` dev dependency that
-  `client/package.json` now declares.
+  `frontend/package.json` now declares.
 
-A standalone `client` project still has no API proxy or SPA fallback, because
+A standalone `frontend` project still has no API proxy or SPA fallback, because
 the root `vercel.json` does not apply to it. That is why the repository-root
 project is the supported setup.
 

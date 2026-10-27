@@ -6,7 +6,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '../..');
 
 dotenv.config({ path: path.join(repoRoot, '.env'), quiet: true });
-dotenv.config({ path: path.join(repoRoot, 'server', '.env'), quiet: true });
+dotenv.config({ path: path.join(repoRoot, 'backend', '.env'), quiet: true });
 
 function bool(value: string | undefined, fallback = false): boolean {
   if (value === undefined || value === '') return fallback;
@@ -39,15 +39,15 @@ export const config = {
   databaseUrl,
   databaseSsl,
   databaseSslRejectUnauthorized: databaseSsl !== 'no-verify',
-  pgliteDataDir: path.resolve(repoRoot, 'server', str(process.env.PGLITE_DATA_DIR, './data')),
+  pgliteDataDir: path.resolve(repoRoot, 'backend', str(process.env.PGLITE_DATA_DIR, './data')),
   sessionCookieName: str(process.env.SESSION_COOKIE_NAME, 'nm_session'),
   cartCookieName: 'nm_cart',
   sessionTtlDays: num(process.env.SESSION_TTL_DAYS, 30),
   requireVerifiedEmail: bool(process.env.REQUIRE_VERIFIED_EMAIL, false),
   reservationMinutes: num(process.env.RESERVATION_MINUTES, 120),
   rateLimitWindowMs: num(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
-  uploadsDir: path.resolve(repoRoot, str(process.env.UPLOADS_DIR, 'server/uploads')),
-  clientDist: path.resolve(repoRoot, 'client', 'dist'),
+  uploadsDir: path.resolve(repoRoot, str(process.env.UPLOADS_DIR, 'backend/uploads')),
+  clientDist: path.resolve(repoRoot, 'frontend', 'dist'),
   maxUploadBytes: 5 * 1024 * 1024,
   seedDemoData: bool(process.env.SEED_DEMO_DATA, !isProd),
   seedAdminPassword: str(process.env.SEED_ADMIN_PASSWORD, 'NileMart#2026'),
