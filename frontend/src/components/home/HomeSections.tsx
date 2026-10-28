@@ -36,7 +36,14 @@ const categoryIcons: Record<string, React.ReactNode> = {
 };
 
 export function Hero({ banner }: { banner: Banner | undefined }) {
-  if (!banner) return null;
+  const title = banner?.title ?? 'Everyday essentials, thoughtfully chosen.';
+  const subtitle =
+    banner?.subtitle ?? 'Discover quality finds for your home, work and everyday life.';
+  const eyebrow = banner?.eyebrow ?? 'Welcome to Nile Mart';
+  const linkUrl = banner?.linkUrl ?? '/products';
+  const linkLabel = banner?.linkLabel ?? 'Shop the collection';
+  const imageUrl = banner?.imageUrl ?? (banner ? '/uploads/seed/hero.png' : null);
+
   return (
     <section className="container-page pt-4 sm:pt-6">
       <div className="relative overflow-hidden rounded-[26px] bg-brand-950">
@@ -48,20 +55,20 @@ export function Hero({ banner }: { banner: Banner | undefined }) {
           <div className="relative z-10 flex flex-col justify-center px-6 py-10 sm:px-10 sm:py-14 lg:px-14 lg:py-20">
             <p className="inline-flex w-fit items-center gap-2 rounded-full border border-gold-400/30 bg-gold-400/10 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.2em] text-gold-300">
               <span className="size-1.5 rounded-full bg-gold-400" />
-              {banner.eyebrow}
+              {eyebrow}
             </p>
             <h1 className="mt-5 max-w-xl font-display text-[34px] font-extrabold leading-[1.06] tracking-tight text-white sm:text-[44px] lg:text-[52px]">
-              {banner.title}
+              {title}
             </h1>
-            <p className="mt-4 max-w-md text-sm leading-relaxed text-white/65 sm:text-[15px]">{banner.subtitle}</p>
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-white/65 sm:text-[15px]">{subtitle}</p>
             <div className="mt-7 flex flex-wrap gap-3">
               <ButtonLink
-                to={banner.linkUrl}
+                to={linkUrl}
                 size="lg"
                 variant="gold"
                 iconRight={<ArrowRight className="size-4" />}
               >
-                {banner.linkLabel}
+                {linkLabel}
               </ButtonLink>
               <ButtonLink
                 to="/products?deals=1"
@@ -85,12 +92,14 @@ export function Hero({ banner }: { banner: Banner | undefined }) {
           </div>
 
           <div className="relative min-h-[320px] overflow-hidden lg:min-h-[520px]">
-            <img
-              src={banner.imageUrl ?? '/uploads/seed/hero.png'}
-              alt=""
-              className="absolute inset-0 size-full object-cover object-center"
-              fetchPriority="high"
-            />
+            {imageUrl && (
+              <img
+                src={imageUrl}
+                alt=""
+                className="absolute inset-0 size-full object-cover object-center"
+                fetchPriority="high"
+              />
+            )}
             <div className="absolute inset-0 bg-gradient-to-t from-brand-950 via-brand-950/10 to-transparent lg:bg-gradient-to-r lg:from-brand-950 lg:via-brand-950/10 lg:to-transparent" />
             <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-md lg:left-8 lg:right-8">
               <div>

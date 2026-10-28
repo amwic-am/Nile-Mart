@@ -2,11 +2,19 @@ import app from './app.js';
 import { config } from './config.js';
 import { closeDatabase, getDatabase } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
+import { seedDatabase } from './db/seed.js';
 import { logger } from './lib/logger.js';
 import { expireStaleReservations } from './services/orders.js';
 
 const db = await getDatabase();
 await runMigrations(db);
+if (config.seedDemoData && !config.isProd) {
+  if (config.databaseUrl) {
+    logger.warn('Automatic demo seeding is skipped for DATABASE_URL; seed a remote development database explicitly.');
+  } else {
+    await seedDatabase(db);
+  }
+}
 
 const reservationSweep = setInterval(
   () => {

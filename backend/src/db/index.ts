@@ -34,6 +34,10 @@ class SerialQueue {
     );
     return result;
   }
+
+  async wait(): Promise<void> {
+    await this.tail;
+  }
 }
 
 class PgliteDriver implements Driver {
@@ -90,22 +94,27 @@ class PgDriver implements Driver {
 
   async transaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    const queue = new SerialQueue();
     try {
       await client.query('BEGIN');
       const sql: Sql = {
-        query: async <R = Record<string, unknown>>(text: string, params: unknown[] = []) => {
-          const result = await client.query(text, params);
-          return { rows: result.rows as R[], rowCount: result.rowCount ?? result.rows.length };
-        },
-        exec: async (text: string) => {
-          await client.query(text);
-        },
+        query: <R = Record<string, unknown>>(text: string, params: unknown[] = []) =>
+          queue.run(async () => {
+            const result = await client.query(text, params);
+            return { rows: result.rows as R[], rowCount: result.rowCount ?? result.rows.length };
+          }),
+        exec: (text: string) =>
+          queue.run(async () => {
+            await client.query(text);
+          }),
       };
       const result = await fn(sql);
+      await queue.wait();
       await client.query('COMMIT');
       return result;
     } catch (error) {
       try {
+        await queue.wait();
         await client.query('ROLLBACK');
       } catch (rollbackError) {
         logger.error('Failed to roll back transaction', { error: String(rollbackError) });
