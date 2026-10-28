@@ -101,9 +101,14 @@ backend/
   src/db/               Connection, migrations, seed, first-admin bootstrap
   tests/                Vitest integration suite
   uploads/              Admin-uploaded images (persist this directory)
+cloudflare/
+  worker.js             Worker proxy for /api and /uploads
+wrangler.jsonc          Worker config: static assets + proxy routes
 docs/
   payments.md           Payment rules, Chapa setup, acceptance checklist
   deployment.md         Production deployment, RLS roles, backups, checklists
+  deploy-vercel.md      Vercel storefront + Railway API + Neon
+  deploy-cloudflare.md  Cloudflare Worker storefront + Railway API + Neon
 ```
 
 ## How the important parts work
@@ -209,7 +214,9 @@ See [docs/deployment.md](docs/deployment.md) for PostgreSQL setup, the
 `nilemart_app` RLS role, first-admin provisioning, reverse proxy/HTTPS, uploads
 persistence, backups, webhook URLs and the go-live checklist. For a Vercel
 storefront with the API on Railway and PostgreSQL on Neon, see
-[docs/deploy-vercel.md](docs/deploy-vercel.md). Short version:
+[docs/deploy-vercel.md](docs/deploy-vercel.md). For Cloudflare Workers (which
+runs `npx wrangler deploy` from the repository root), see
+[docs/deploy-cloudflare.md](docs/deploy-cloudflare.md). Short version:
 
 ```bash
 npm ci

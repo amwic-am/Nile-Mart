@@ -12,3 +12,7 @@ Thumbs.db
 # Raw image-generation sources (the optimized assets live in frontend/public and
 # backend/uploads/seed)
 vibe_images/
+
+.vercel
+.wrangler/
+.dev.vars
