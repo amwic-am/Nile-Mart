@@ -5,6 +5,7 @@ import { AuthLayout } from '@/components/auth/AuthLayout';
 import { Button, ButtonLink, Field, Input } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { useSeo } from '@/lib/seo';
+import type { AuthUser } from '@/lib/types';
 import { useAuth } from '@/stores/auth';
 
 type State =
@@ -16,7 +17,10 @@ type State =
 export default function VerifyEmailPage() {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
-  const [state, setState] = useState<State>(token ? { kind: 'verifying' } : { kind: 'missing' });
+  const tokenHash = params.get('token_hash') ?? '';
+  const tokenKey = tokenHash || token;
+  const verifyType = params.get('type') === 'email' ? 'email' : 'signup';
+  const [state, setState] = useState<State>(tokenKey ? { kind: 'verifying' } : { kind: 'missing' });
   const [email, setEmail] = useState('');
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState('');
@@ -35,26 +39,23 @@ export default function VerifyEmailPage() {
   });
 
   useEffect(() => {
-    if (!token || attempted.current === token) return;
-    attempted.current = token;
-    let active = true;
+    if (!tokenKey || attempted.current === tokenKey) return;
+    attempted.current = tokenKey;
 
     void api
-      .post<{ verified: boolean; user: { emailVerified: boolean } | null }>('/auth/verify-email', { token })
+      .post<{ verified: boolean; user: AuthUser | null }>('/auth/verify-email', {
+        ...(token ? { token } : {}),
+        ...(tokenHash ? { tokenHash, type: verifyType } : {}),
+      })
       .then((result) => {
-        if (!active) return;
         setState({ kind: 'verified' });
-        if (user) setUser({ ...user, emailVerified: result.user?.emailVerified ?? true });
+        if (result.user) setUser(result.user);
+        else if (user) setUser({ ...user, emailVerified: true });
       })
       .catch((error) => {
-        if (!active) return;
         setState({ kind: 'failed', message: errorMessage(error) });
       });
-
-    return () => {
-      active = false;
-    };
-  }, [token, user, setUser]);
+  }, [token, tokenHash, tokenKey, verifyType, user, setUser]);
 
   const resend = async () => {
     setResending(true);

@@ -283,7 +283,7 @@ export default function ProductDetailPage() {
                 src={product.images[activeImage].url}
                 alt={product.images[activeImage].alt}
                 className="size-full object-cover transition duration-500 group-hover:scale-[1.03]"
-                fetchPriority="high"
+                {...{ fetchpriority: 'high' }}
               />
             ) : (
               <div className="grid size-full place-items-center text-sm text-slate-warm">Image coming soon</div>

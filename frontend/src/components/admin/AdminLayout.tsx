@@ -144,7 +144,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       to={item.to}
                       end={item.end}
                       onClick={onNavigate}
-                      className={({ isActive }) =>
+                      className={({ isActive }: { isActive: boolean }) =>
                         cx(
                           'group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[12.5px] font-semibold transition',
                           isActive
@@ -153,7 +153,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         )
                       }
                     >
-                      {({ isActive }) => (
+                      {({ isActive }: { isActive: boolean }) => (
                         <>
                           <Icon
                             className={cx(

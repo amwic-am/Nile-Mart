@@ -123,6 +123,8 @@ export function ForgotPasswordPage() {
 export function ResetPasswordPage() {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
+  const tokenHash = params.get('token_hash') ?? '';
+  const tokenKey = tokenHash || token;
   const navigate = useNavigate();
   const [done, setDone] = useState(false);
   const [serverError, setServerError] = useState('');
@@ -146,12 +148,16 @@ export function ResetPasswordPage() {
 
   const submit = handleSubmit(async (values) => {
     setServerError('');
-    if (!token) {
+    if (!tokenKey) {
       setServerError('This reset link is missing its token. Request a new link.');
       return;
     }
     try {
-      await api.post('/auth/reset-password', { token, password: values.password });
+      await api.post('/auth/reset-password', {
+        ...(token ? { token } : {}),
+        ...(tokenHash ? { tokenHash } : {}),
+        password: values.password,
+      });
       setDone(true);
       window.setTimeout(() => navigate('/login', { replace: true }), 2200);
     } catch (caught) {
@@ -190,7 +196,7 @@ export function ResetPasswordPage() {
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4" noValidate>
-          {!token && (
+          {!tokenKey && (
             <div className="rounded-xl bg-red-50 px-3.5 py-3 text-[12.5px] font-medium text-red-700">
               This link is missing its reset token.{' '}
               <Link to="/forgot-password" className="underline underline-offset-2">
@@ -229,7 +235,7 @@ export function ResetPasswordPage() {
               />
             )}
           </Field>
-          <Button type="submit" fullWidth size="lg" loading={isSubmitting} disabled={!token}>
+          <Button type="submit" fullWidth size="lg" loading={isSubmitting} disabled={!tokenKey}>
             Update password
           </Button>
         </form>

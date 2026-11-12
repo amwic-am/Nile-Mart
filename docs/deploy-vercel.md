@@ -1,10 +1,16 @@
 # Deploying Nile Mart on Vercel
 
 This guide deploys the storefront to **Vercel**, the Express API to **Railway**
-(or any long-lived Node host), and PostgreSQL to **Neon**. It is the recommended
-topology for this codebase because the API relies on a few things serverless
-functions do not provide: a persistent uploads disk, a long-lived process for
-the stock-reservation sweep, and request bodies up to 5 MB.
+(or any long-lived Node host), and data to **Supabase** or **Neon**. It is the
+recommended topology for this codebase because the API relies on a few things
+serverless functions do not provide: a long-lived process for the
+stock-reservation sweep, request bodies up to 5 MB, and a server-side spot for
+the Supabase service-role key.
+
+Supabase Auth is **required in production** (`NODE_ENV=production` refuses
+`AUTH_PROVIDER=local`), so a Supabase project is needed even when the database
+itself lives on Neon. Supabase Storage is optional: with it, product images need
+no persistent volume.
 
 ```text
 Browser
@@ -13,33 +19,54 @@ Browser
 Vercel (frontend/dist, SPA rewrites)
   │  /api/*, /uploads/*, /robots.txt, /sitemap.xml  →  proxy
   ▼
-Railway (backend/dist, Express, uploads volume, cron sweep)
-  │
+Railway (server/dist, Express, reservation sweep)
+  │                    │ GoTrue REST + Storage (service role)
+  │                    ▼
+  │                 Supabase (Auth, optional Storage)
   ▼
-Neon PostgreSQL (RLS enforced)
+Supabase Postgres or Neon PostgreSQL (RLS enforced)
 ```
 
 The proxy keeps the API same-origin from the browser's point of view, so the
 session cookie stays first-party and no CORS layer is needed. Only the API host
-holds database and payment secrets; the Vercel project holds none.
+holds database, Supabase and payment secrets; the Vercel project holds none.
 
 `vercel.json` ships with `API-HOST.example.com` as a placeholder — replace it
 with the real API domain in step 3.
 
 ---
 
-## 1. Database (Neon)
+## 1. Database (Supabase or Neon)
 
-1. Create a Neon project and copy the **direct** connection string (not the
-   pooled one). It looks like
-   `postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require`.
-2. Install, build the backend, and apply migrations from the repository root:
+### Supabase (recommended)
+
+Follow [supabase.md](supabase.md) steps 1–4: copy the connection string, run
+migrations as the `postgres` role, grant `nilemart_app ... with set true`,
+configure auth URLs and templates, and create the `product-images` bucket.
+
+```bash
+npm ci
+npm run build -w server
+DATABASE_URL='postgresql://.../postgres?sslmode=require' \
+  NODE_ENV=production node server/dist/db/migrate.js
+```
+
+Then create the first administrator (section 1.4 below). Demo seeding is refused
+in production.
+
+### Neon
+
+1. Create a Neon project and copy the **direct** or session-pooler connection
+   string:
+   `postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require
+   Do not use the transaction pooler on port `6543` with this `pg` setup.
+2. Install, build the server, and apply migrations from the repository root:
 
    ```bash
    npm ci
-   npm run build -w backend
+   npm run build -w server
    DATABASE_URL='postgresql://.../neondb?sslmode=require' \
-     NODE_ENV=production node backend/dist/db/migrate.js
+     NODE_ENV=production node server/dist/db/migrate.js
    ```
 
    Migration `002_rls.sql` creates the restricted `nilemart_app` role and all
@@ -69,15 +96,22 @@ with the real API domain in step 3.
    grant nilemart_app to <your_neon_login> with set true;
    ```
 
+   Migration `008` attaches the Supabase profile trigger only when the `auth`
+   schema exists, so it is a no-op on Neon; create profiles through the API as
+   usual.
+
 4. Create the first administrator. Demo seeding is refused in production:
 
    ```bash
    DATABASE_URL='postgresql://.../neondb?sslmode=require' \
      NODE_ENV=production \
+     SUPABASE_URL='https://<project-ref>.supabase.co' \
+     SUPABASE_ANON_KEY='<anon key>' \
+     SUPABASE_SERVICE_ROLE_KEY='<service-role key>' \
      ADMIN_EMAIL='ops@example.com' \
      ADMIN_PASSWORD='a-long-unique-password' \
      ADMIN_NAME='Operations lead' \
-     node backend/dist/db/create-admin.js
+     node server/dist/db/create-admin.js
    ```
 
    Do not run `db:seed` or `db:reset` against production.
@@ -91,13 +125,13 @@ Create a Railway project from the same repository.
 **Build**
 
 ```bash
-npm ci --include=dev && npm run build -w backend
+npm ci --include=dev && npm run build -w server
 ```
 
 **Start**
 
 ```bash
-node backend/dist/db/migrate.js && node backend/dist/index.js
+node server/dist/db/migrate.js && node server/dist/index.js
 ```
 
 Migrations are idempotent, so running them on boot is safe. Keep a single API
@@ -106,9 +140,10 @@ reservation sweep is designed for one instance.
 
 **Health check:** `/health`
 
-**Volume:** mount a volume at `/data` and set `UPLOADS_DIR=/data/uploads`.
-Admin product images then survive redeploys. The development seed images in
-`backend/uploads/seed` are not used in production.
+**Volume:** not required when Supabase Storage is configured. Otherwise mount a
+volume at `/data` and set `UPLOADS_DIR=/data/uploads` so admin product images
+survive redeploys. The development seed images in `server/uploads/seed` are not
+used in production.
 
 **Variables**
 
@@ -117,10 +152,18 @@ NODE_ENV=production
 DATABASE_URL=postgresql://.../neondb?sslmode=require
 DATABASE_SSL=require
 
+# Required in production: server-side Supabase Auth (and Storage if used)
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role key>
+SUPABASE_STORAGE_BUCKET=product-images
+# AUTH_PROVIDER defaults to supabase when the URL and anon key are set
+
 # Used for links, redirects and the Origin check
 APP_URL=https://shop.example.com
 # Public API origin used for payment callbacks and webhooks
 API_URL=https://api.example.com
+# Fallback only when Supabase Storage is not configured
 UPLOADS_DIR=/data/uploads
 
 SESSION_COOKIE_NAME=nm_session
@@ -209,9 +252,13 @@ Then in a browser:
 
 - Load the storefront and confirm the logo, favicons and OG tags (View Source)
   use the Vercel HTTPS origin.
-- Sign in, add to cart, and place a COD order end to end.
+- Register, open the verification link, sign in, add to cart, and place a COD
+  order end to end. With Supabase Auth the link must land on `/verify-email` and
+  succeed; see [supabase.md](supabase.md) for the required templates.
+- Request a password reset and complete it from the email link.
 - Open `/admin` with the first administrator and upload a product image; confirm
-  it survives an API redeploy (volume) and loads through `/uploads/...`.
+  it loads from `.../storage/v1/object/public/product-images/...` (Supabase
+  Storage) or through `/uploads/...` (volume fallback) after an API redeploy.
 - Re-run the RLS queries from step 1 after the first order exists.
 
 ---
@@ -259,8 +306,7 @@ npx vercel inspect dpl_XXXXXXXX --logs
 - **Reservation sweep:** runs inside the long-lived API process every five
   minutes. It does not run on Vercel Functions.
 - **All-in-one Vercel:** possible with Vercel Services, but this Express app
-  would need Vercel Blob for uploads and a Cron endpoint for the sweep, and the
-  build would need function packaging. That is a code change, not a config
-  change; the split above avoids it.
+  would need a Cron endpoint for the sweep and function packaging. That is a code
+  change, not a config change; the split above avoids it.
 - **Single-host alternative:** the Express server can serve both the SPA and the
   API from one machine; see [deployment.md](deployment.md).

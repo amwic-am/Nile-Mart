@@ -72,7 +72,7 @@ export function AccountLayout() {
                   key={item.to}
                   to={item.to}
                   end={item.end}
-                  className={({ isActive }) =>
+                  className={({ isActive }: { isActive: boolean }) =>
                     cx(
                       'group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition',
                       isActive
@@ -81,7 +81,7 @@ export function AccountLayout() {
                     )
                   }
                 >
-                  {({ isActive }) => (
+                  {({ isActive }: { isActive: boolean }) => (
                     <>
                       <Icon className={cx('size-4 shrink-0', isActive ? 'text-gold-300' : 'text-brand-900/60')} />
                       <span className="truncate">{item.label}</span>

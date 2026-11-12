@@ -1,8 +1,6 @@
 import {
   forwardRef,
-  useEffect,
   useId,
-  useRef,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -14,28 +12,33 @@ import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Loader2, Minus, Plus, Star, X } from 'lucide-react';
 import { cx, formatSantim } from '@/lib/format';
 import { useToasts } from '@/stores/toasts';
+import { Button as ShadcnButton, buttonVariants } from './ui/button';
+import { Input as ShadcnInput } from './ui/input';
+import { Textarea as ShadcnTextarea } from './ui/textarea';
+import { Label } from './ui/label';
+import { Badge as ShadcnBadge } from './ui/badge';
+import { Skeleton as ShadcnSkeleton } from './ui/skeleton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 
 /* ------------------------------------------------------------------ Button */
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'gold' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
-const buttonVariants: Record<ButtonVariant, string> = {
-  primary:
-    'bg-brand-900 text-white hover:bg-brand-800 active:bg-brand-950 shadow-sm disabled:bg-brand-900/50',
-  secondary: 'bg-sand text-brand-900 hover:bg-line active:bg-line/80 disabled:opacity-50',
-  outline:
-    'border border-brand-900/15 bg-white text-brand-900 hover:border-brand-900/40 hover:bg-brand-50/60 disabled:opacity-50',
-  ghost: 'text-brand-900 hover:bg-brand-900/5 disabled:opacity-50',
-  gold: 'bg-gold-500 text-brand-950 hover:bg-gold-400 active:bg-gold-600 disabled:opacity-50',
-  danger: 'bg-red-600 text-white hover:bg-red-700 disabled:opacity-50',
-};
+const buttonVariantMap = {
+  primary: 'default',
+  secondary: 'secondary',
+  outline: 'outline',
+  ghost: 'ghost',
+  gold: 'gold',
+  danger: 'destructive',
+} as const satisfies Record<ButtonVariant, 'default' | 'secondary' | 'outline' | 'ghost' | 'gold' | 'destructive'>;
 
-const buttonSizes: Record<ButtonSize, string> = {
-  sm: 'h-9 px-3.5 text-[13px] rounded-lg gap-1.5',
-  md: 'h-11 px-5 text-sm rounded-xl gap-2',
-  lg: 'h-13 px-7 text-[15px] rounded-xl gap-2.5',
-};
+const buttonSizeMap = {
+  sm: 'sm',
+  md: 'default',
+  lg: 'lg',
+} as const satisfies Record<ButtonSize, 'sm' | 'default' | 'lg'>;
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -62,23 +65,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   return (
-    <button
+    <ShadcnButton
       ref={ref}
       type="button"
+      variant={buttonVariantMap[variant]}
+      size={buttonSizeMap[size]}
       disabled={disabled || loading}
-      className={cx(
-        'inline-flex select-none items-center justify-center font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500',
-        buttonVariants[variant],
-        buttonSizes[size],
-        fullWidth && 'w-full',
-        className,
-      )}
+      className={cx(fullWidth && 'w-full', className)}
       {...rest}
     >
       {loading ? <Loader2 className="size-4 animate-spin" aria-hidden /> : iconLeft}
       {children}
       {iconRight}
-    </button>
+    </ShadcnButton>
   );
 });
 
@@ -104,13 +103,11 @@ export function ButtonLink({
   return (
     <Link
       to={to}
-      className={cx(
-        'inline-flex select-none items-center justify-center font-semibold transition',
-        buttonVariants[variant],
-        buttonSizes[size],
-        fullWidth && 'w-full',
-        className,
-      )}
+      className={buttonVariants({
+        variant: buttonVariantMap[variant],
+        size: buttonSizeMap[size],
+        className: cx(fullWidth && 'w-full', className),
+      })}
     >
       {iconLeft}
       {children}
@@ -136,9 +133,9 @@ export function Field({ label, error, hint, id: providedId, children }: FieldShe
   return (
     <div>
       {label && (
-        <label className="label" htmlFor={id}>
+        <Label className="mb-1.5" htmlFor={id}>
           {label}
-        </label>
+        </Label>
       )}
       {children({ id, describedBy })}
       {error ? (
@@ -157,9 +154,9 @@ export function Field({ label, error, hint, id: providedId, children }: FieldShe
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(
   function Input({ className, invalid, ...rest }, ref) {
     return (
-      <input
+      <ShadcnInput
         ref={ref}
-        className={cx('field', invalid && 'field-error', className)}
+        className={className}
         aria-invalid={invalid || undefined}
         {...rest}
       />
@@ -172,9 +169,9 @@ export const Textarea = forwardRef<
   TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }
 >(function Textarea({ className, invalid, ...rest }, ref) {
   return (
-    <textarea
+    <ShadcnTextarea
       ref={ref}
-      className={cx('field h-auto min-h-24 py-3', invalid && 'field-error', className)}
+      className={className}
       aria-invalid={invalid || undefined}
       {...rest}
     />
@@ -209,23 +206,20 @@ export function Badge({
   className?: string;
 }) {
   const tones = {
-    neutral: 'bg-sand text-slate-warm',
-    gold: 'bg-gold-100 text-gold-800',
-    green: 'bg-emerald-50 text-emerald-700',
-    red: 'bg-red-50 text-red-700',
-    brand: 'bg-brand-900 text-white',
-    outline: 'border border-line bg-white/80 text-slate-warm',
-  };
+    neutral: 'default',
+    gold: 'gold',
+    green: 'success',
+    red: 'destructive',
+    brand: 'brand',
+    outline: 'outline',
+  } as const satisfies Record<
+    'neutral' | 'gold' | 'green' | 'red' | 'brand' | 'outline',
+    'default' | 'gold' | 'success' | 'destructive' | 'brand' | 'outline'
+  >;
   return (
-    <span
-      className={cx(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide',
-        tones[tone],
-        className,
-      )}
-    >
+    <ShadcnBadge variant={tones[tone]} className={className}>
       {children}
-    </span>
+    </ShadcnBadge>
   );
 }
 
@@ -302,7 +296,7 @@ export function Price({
 /* ---------------------------------------------------------------- Skeleton */
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cx('animate-pulse rounded-lg bg-sand', className)} />;
+  return <ShadcnSkeleton className={className} />;
 }
 
 export function Spinner({ className }: { className?: string }) {
@@ -373,56 +367,22 @@ export function Modal({
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg';
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl' };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] grid place-items-center p-4">
-      <div className="absolute inset-0 bg-brand-950/45 backdrop-blur-sm" onClick={onClose} aria-hidden />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-        className={cx(
-          'animate-fade-up relative max-h-[88vh] w-full overflow-y-auto rounded-2xl bg-white p-6 shadow-lift outline-none sm:p-7',
-          widths[size],
-        )}
-      >
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <h2 className="text-xl font-bold">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid size-9 place-items-center rounded-full text-slate-warm transition hover:bg-sand hover:text-brand-900"
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next: boolean) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className={widths[size]} aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         {children}
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }
 

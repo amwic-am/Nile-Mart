@@ -244,7 +244,7 @@ export function Header() {
               <NavLink
                 key={category.id}
                 to={`/category/${category.slug}`}
-                className={({ isActive }) =>
+                className={({ isActive }: { isActive: boolean }) =>
                   cx(
                     'whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition',
                     index >= 5 && 'hidden xl:inline-flex',

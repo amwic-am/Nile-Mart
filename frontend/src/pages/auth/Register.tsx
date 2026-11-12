@@ -49,6 +49,7 @@ export default function RegisterPage() {
   const [serverError, setServerError] = useState('');
   const [devVerifyUrl, setDevVerifyUrl] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   const {
     register,
@@ -86,7 +87,11 @@ export default function RegisterPage() {
         marketingOptIn: values.marketingOptIn,
       });
       setCreated(true);
-      push(`Welcome to Nile Mart, ${result.user.fullName.split(' ')[0]}.`);
+      if (result.user) {
+        push(`Welcome to Nile Mart, ${result.user.fullName.split(' ')[0]}.`);
+      } else {
+        setPendingEmail(result.email ?? values.email);
+      }
       if (result.devVerifyUrl) setDevVerifyUrl(result.devVerifyUrl);
     } catch (caught) {
       const fields = fieldErrors(caught);
@@ -103,8 +108,12 @@ export default function RegisterPage() {
   if (created) {
     return (
       <AuthLayout
-        title="Your account is ready"
-        subtitle="You are signed in. Verify your email to unlock checkout and order notifications."
+        title={pendingEmail ? 'Check your inbox' : 'Your account is ready'}
+        subtitle={
+          pendingEmail
+            ? `We sent a confirmation link to ${pendingEmail}. Open it to finish creating your account.`
+            : 'You are signed in. Verify your email to unlock checkout and order notifications.'
+        }
         footer={
           <Link to="/products" className="font-semibold text-brand-900 underline decoration-gold-400 underline-offset-4">
             Continue shopping
@@ -115,8 +124,9 @@ export default function RegisterPage() {
           <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">
             <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
             <p className="text-[12.5px] leading-relaxed text-emerald-800">
-              Account created. We emailed you a verification link. Check your inbox, or resend it from your account
-              security page.
+              {pendingEmail
+                ? 'Your details are saved. Click the link in the email to confirm your address, then sign in.'
+                : 'Account created. We emailed you a verification link. Check your inbox, or resend it from your account security page.'}
             </p>
           </div>
           {devVerifyUrl && (
@@ -128,13 +138,23 @@ export default function RegisterPage() {
               </ButtonLink>
             </div>
           )}
-          <Button
-            fullWidth
-            size="lg"
-            onClick={() => navigate(next === '/account' ? '/account' : next, { replace: true })}
-          >
-            Go to my account
-          </Button>
+          {pendingEmail ? (
+            <Button
+              fullWidth
+              size="lg"
+              onClick={() => navigate(`/login${params.get('next') ? `?next=${encodeURIComponent(next)}` : ''}`, { replace: true })}
+            >
+              Go to sign in
+            </Button>
+          ) : (
+            <Button
+              fullWidth
+              size="lg"
+              onClick={() => navigate(next === '/account' ? '/account' : next, { replace: true })}
+            >
+              Go to my account
+            </Button>
+          )}
         </div>
       </AuthLayout>
     );

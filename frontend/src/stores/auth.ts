@@ -16,7 +16,7 @@ interface AuthState {
     password: string;
     phone?: string;
     marketingOptIn?: boolean;
-  }) => Promise<{ user: AuthUser; devVerifyUrl?: string }>;
+  }) => Promise<{ user: AuthUser | null; requiresVerification?: boolean; email?: string; devVerifyUrl?: string }>;
   logout: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
 }
@@ -44,8 +44,13 @@ export const useAuth = create<AuthState>((set) => ({
   },
 
   register: async (input) => {
-    const result = await api.post<{ user: AuthUser; devVerifyUrl?: string }>('/auth/register', input);
-    set({ user: result.user, status: 'authenticated', error: null });
+    const result = await api.post<{
+      user: AuthUser | null;
+      requiresVerification?: boolean;
+      email?: string;
+      devVerifyUrl?: string;
+    }>('/auth/register', input);
+    if (result.user) set({ user: result.user, status: 'authenticated', error: null });
     return result;
   },
 

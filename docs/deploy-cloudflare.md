@@ -1,10 +1,13 @@
 # Deploying the storefront on Cloudflare
 
 This path serves the built SPA from a **Cloudflare Worker** and proxies the API
-to **Railway**, with PostgreSQL on **Neon**. It exists because the repository is
-an npm workspace: `npx wrangler deploy` run at the root fails with
-"application detection logic has been run in the root of a workspace" unless a
-root `wrangler.jsonc` is present. This config supplies it.
+to **Railway**, with PostgreSQL on **Supabase** or **Neon**. It exists because
+the repository is an npm workspace: `npx wrangler deploy` run at the root fails
+with "application detection logic has been run in the root of a workspace"
+unless a root `wrangler.jsonc` is present. This config supplies it.
+
+Supabase Auth is required in production, and Supabase Storage is the simplest way
+to keep product images without a Railway volume.
 
 ```text
 Browser
@@ -14,10 +17,12 @@ Cloudflare Worker
   │  assets from frontend/dist (SPA fallback)
   │  /api/*, /uploads/*, /robots.txt, /sitemap.xml  →  proxy
   ▼
-Railway (backend/dist, Express, uploads volume)
-  │
+Railway (server/dist, Express)
+  │                    │ GoTrue REST + Storage
+  │                    ▼
+  │                 Supabase (Auth, optional Storage)
   ▼
-Neon PostgreSQL (RLS enforced)
+Supabase Postgres or Neon PostgreSQL (RLS enforced)
 ```
 
 Files involved:
@@ -30,9 +35,12 @@ Files involved:
 
 ## 1. Database and API
 
-Follow steps 1 and 2 of [deploy-vercel.md](deploy-vercel.md) to create the Neon
+Follow steps 1 and 2 of [deploy-vercel.md](deploy-vercel.md) to create the
 database, apply migrations, grant `nilemart_app` `SET TRUE`, and run the Express
-API on Railway. Note the Railway HTTPS origin, for example
+API on Railway. Either use Supabase for Postgres, Auth and Storage
+([supabase.md](supabase.md)) or Neon for Postgres while still setting the
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` variables on
+Railway. Note the Railway HTTPS origin, for example
 `https://nile-mart-api.up.railway.app`.
 
 ## 2. Worker settings
@@ -94,8 +102,9 @@ validates the config without uploading.
   from the browser are discarded so rate limits and audit logs cannot be spoofed.
 - The Worker proxies request bodies up to Cloudflare's plan limit; the API's own
   upload cap is 5 MB.
-- Uploads are not cached at the edge by this proxy. If image traffic grows,
-  serve uploads from object storage instead of the Railway volume.
+- With Supabase Storage configured, product images are served from the Supabase
+  public URL, not `/uploads`, so image traffic bypasses the Worker. The
+  `/uploads/*` proxy remains for the disk fallback (for example seed images).
 - Cloudflare Pages is a different product: it has no `wrangler deploy` step and
   would need Pages Functions for the API proxy. The Worker setup above is the
   supported path for this repository.

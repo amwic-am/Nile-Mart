@@ -97,7 +97,7 @@ export function Hero({ banner }: { banner: Banner | undefined }) {
                 src={imageUrl}
                 alt=""
                 className="absolute inset-0 size-full object-cover object-center"
-                fetchPriority="high"
+                {...{ fetchpriority: 'high' }}
               />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-brand-950 via-brand-950/10 to-transparent lg:bg-gradient-to-r lg:from-brand-950 lg:via-brand-950/10 lg:to-transparent" />

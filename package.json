@@ -5,24 +5,29 @@
   "description": "Nile Mart - premium Ethiopian e-commerce platform",
   "workspaces": [
     "frontend",
-    "backend"
+    "server"
   ],
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "build": "npm run build -w frontend && npm run build -w backend",
-    "start": "npm run start -w backend",
-    "db:migrate": "npm run db:migrate -w backend",
-    "db:seed": "npm run db:seed -w backend",
-    "db:create-admin": "npm run db:create-admin -w backend",
-    "db:reset": "npm run db:reset -w backend",
-    "test": "npm run test -w backend",
-    "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend"
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w frontend && npm run build -w server",
+    "start": "npm run start -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:seed": "npm run db:seed -w server",
+    "db:create-admin": "npm run db:create-admin -w server",
+    "db:reset": "npm run db:reset -w server",
+    "test": "npm run test -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w frontend",
+    "postinstall": "prisma skills sync || exit 0"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "concurrently": "^10.0.6"
+    "concurrently": "^10.0.6",
+    "prisma": "^8.0.0-rc.33",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "wrangler": "^4.154.0"
   },
   "dependencies": {
     "@neon/config": "^1.9.5",
@@ -30,5 +35,9 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "overrides": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }

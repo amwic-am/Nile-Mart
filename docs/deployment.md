@@ -2,20 +2,28 @@
 
 This document covers a single-host production deployment: one Node.js process
 serving the API, uploaded images and the built storefront, PostgreSQL for data,
-and an HTTPS reverse proxy in front. Separating the API and storefront onto
-different hostnames is **not** supported without extra work, because sessions use
-`SameSite=Lax` cookies and the API has no CORS layer.
+Supabase for authentication (and optionally storage), and an HTTPS reverse proxy
+in front. Separating the API and storefront onto different hostnames is **not**
+supported without extra work, because sessions use `SameSite=Lax` cookies and the
+API has no CORS layer.
 
 ## At a glance
 
 ```
 Internet ──HTTPS──> nginx / Caddy ──HTTP──> Node (Express + SPA) ──> PostgreSQL
-                                              └─ backend/uploads (persistent disk)
+                                              │  GoTrue REST (supabase auth)
+                                              │  Supabase Storage (optional)
+                                              └─ server/uploads (fallback disk)
 ```
 
 - Node.js 20+ (tested on 24), npm 10+.
-- PostgreSQL 14 or newer (13+ already provides `gen_random_uuid()`).
-- A writable, persistent `backend/uploads` directory.
+- PostgreSQL 14 or newer (13+ already provides `gen_random_uuid()`), on Supabase,
+  Neon or self-hosted.
+- A Supabase project: `SUPABASE_URL` and `SUPABASE_ANON_KEY` are required in
+  production; `SUPABASE_SERVICE_ROLE_KEY` is needed for Storage, creating admin
+  users and demo seeding. See [supabase.md](supabase.md).
+- A writable, persistent `server/uploads` directory only when Supabase Storage is
+  not configured.
 - Public DNS + a TLS certificate for the storefront/API origin.
 
 ## 1. Build the release
@@ -24,13 +32,13 @@ On CI or the server:
 
 ```bash
 npm ci
-npm run build          # type-checks client, builds frontend/dist, compiles backend/dist
+npm run build          # type-checks client, builds frontend/dist, compiles server/dist
 ```
 
 The build output is:
 
 - `frontend/dist/` — storefront SPA and static assets (served by Express)
-- `backend/dist/` — compiled API and CLI scripts
+- `server/dist/` — compiled API and CLI scripts
 
 Ship both directories with `package.json`, `package-lock.json` and the runtime
 `node_modules`. If `frontend/dist/index.html` is missing, the server still starts
@@ -57,7 +65,7 @@ Set `DATABASE_URL` for the owner/login role, then apply migrations:
 
 ```bash
 DATABASE_URL='postgres://...?...' NODE_ENV=production \
-  node backend/dist/db/migrate.js
+  node server/dist/db/migrate.js
 ```
 
 Migration `002_rls.sql` creates `nilemart_app nologin` if it does not exist and
@@ -77,8 +85,17 @@ grant nilemart_app to <your_api_login>;
 
 Managed platforms:
 
-- **Supabase** — run migrations with the `postgres` role, which is a superuser;
-  membership is then automatic.
+- **Supabase** — run migrations with the project's `postgres` role. The `auth`
+  schema exists, so migration `008` links `profiles.id` to `auth.users(id)` and
+  installs the profile trigger. Still grant membership with `SET TRUE` for the
+  login in `DATABASE_URL`:
+
+  ```sql
+  grant nilemart_app to postgres with set true;
+  ```
+
+  Full steps for keys, auth URLs, email templates and Storage are in
+  [supabase.md](supabase.md).
 - **Neon / RDS / other owners** — if your owner cannot `CREATE ROLE`, ask the
   provider's privileged console to pre-create `nilemart_app nologin`, then grant
   it to the application login and run the migrations.
@@ -92,17 +109,21 @@ administrator explicitly:
 
 ```bash
 NODE_ENV=production DATABASE_URL='postgres://...' \
+SUPABASE_URL='https://<project-ref>.supabase.co' \
+SUPABASE_ANON_KEY='<anon key>' \
+SUPABASE_SERVICE_ROLE_KEY='<service-role key>' \
 ADMIN_EMAIL='ops@example.com' \
 ADMIN_PASSWORD='a-long-unique-password' \
 ADMIN_NAME='Operations lead' \
-  node backend/dist/db/create-admin.js
+  node server/dist/db/create-admin.js
 ```
 
-The script applies pending migrations, hashes the password with scrypt, marks the
-email verified and grants `super_admin`. Re-running it resets that account's
-password and unlocks it. Change the password again from the account page after
-the first login, and create the remaining staff accounts in **Admin → Staff &
-roles** with the least privilege they need.
+The script applies pending migrations, creates or updates the Supabase Auth user,
+writes the profile with the same UUID, marks the email verified and grants
+`super_admin`. Re-running it resets that account's password and unlocks it.
+Change the password again from the account page after the first login, and create
+the remaining staff accounts in **Admin → Staff & roles** with the least
+privilege they need.
 
 Do **not** run `db:seed` or `db:reset` in production. `db:seed` exits with a
 warning in production, and `db:reset` refuses to run; `SEED_DEMO_DATA` defaults
@@ -137,6 +158,14 @@ API_URL=https://shop.example.com
 DATABASE_URL=postgres://nilemart_app_login:...@db-host:5432/nilemart?sslmode=require
 DATABASE_SSL=require
 
+# Required in production: server-side Supabase Auth (+ Storage if used)
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role key>
+SUPABASE_STORAGE_BUCKET=product-images
+# AUTH_PROVIDER defaults to supabase when the URL and anon key are set
+# AUTH_PROVIDER=local
+
 SESSION_COOKIE_NAME=nm_session
 SESSION_TTL_DAYS=30
 
@@ -162,15 +191,18 @@ SEED_ADMIN_PASSWORD=
 Notes:
 
 - `APP_URL` and `API_URL` must be the **same HTTPS origin** for the cookie
-  model. `APP_URL` builds canonical/OG URLs and the sitemap; `API_URL` is sent to
-  Chapa as the callback base.
+  model. `APP_URL` builds canonical/OG URLs, verification/recovery redirects and
+  the sitemap; `API_URL` is sent to Chapa as the callback base.
 - `NODE_ENV=production` switches session cookies to `Secure`, enables the
-  Helmet Content Security Policy and JSON logs.
+  Helmet Content Security Policy and JSON logs, and refuses local passwords.
+  `SUPABASE_URL` and `SUPABASE_ANON_KEY` are mandatory.
+- `SUPABASE_SERVICE_ROLE_KEY` is server-only. It is used for Storage uploads,
+  admin user creation and demo seeding; never expose it to the frontend.
 - `REQUIRE_VERIFIED_EMAIL=true` prevents unreachable orders and typos; make sure
   SMTP works first.
 - Leave `SEED_ADMIN_PASSWORD` empty; it is used only by the development seed.
-- Store database and payment secrets only in this file, never in the client.
-  Only `APP_URL`/`API_URL` are public values.
+- Store database, Supabase and payment secrets only in this file, never in the
+  client. Only `APP_URL`/`API_URL` are public values.
 
 ## 4. Run the server
 
@@ -188,7 +220,7 @@ User=nilemart
 Group=nilemart
 WorkingDirectory=/srv/nilemart
 EnvironmentFile=/etc/nilemart.env
-ExecStart=/usr/bin/node backend/dist/index.js
+ExecStart=/usr/bin/node server/dist/index.js
 Restart=always
 RestartSec=5
 # The server handles SIGTERM and drains connections for up to 10 seconds.
@@ -196,7 +228,7 @@ TimeoutStopSec=20
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/srv/nilemart/backend/uploads
+ReadWritePaths=/srv/nilemart/server/uploads
 ProtectHome=true
 
 [Install]
@@ -205,7 +237,7 @@ WantedBy=multi-user.target
 
 ```bash
 sudo useradd --system --home /srv/nilemart --shell /usr/sbin/nologin nilemart
-sudo mkdir -p /srv/nilemart/backend/uploads
+sudo mkdir -p /srv/nilemart/server/uploads
 sudo chown -R nilemart:nilemart /srv/nilemart
 sudo systemctl daemon-reload
 sudo systemctl enable --now nilemart
@@ -267,17 +299,20 @@ server {
 ## 6. Uploads
 
 Admin image uploads (PNG, JPEG, WebP, AVIF, GIF; max 5 MB, content signature
-checked) are written to `backend/uploads` with UUID filenames and served with a
-30-day immutable cache.
+checked) go to a public **Supabase Storage** bucket through the API server when
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set. Files get UUID names,
+immutable cache headers and a public URL such as
+`https://<project-ref>.supabase.co/storage/v1/object/public/product-images/<uuid>.jpg`.
+Create the bucket as described in [supabase.md](supabase.md).
 
-- Keep `backend/uploads` on persistent disk (or a shared volume) and include it
-  in backups. A container filesystem without a volume will lose product images.
-  Set `UPLOADS_DIR` when the volume is mounted elsewhere (for example
-  `/data/uploads`).
-- If you run more than one API instance, mount a shared volume; local uploads are
-  not replicated. Object storage would require an adapter that does not exist
-  yet.
-- Seed product images live in `backend/uploads/seed` and are only needed when the
+- Without Supabase Storage the API falls back to `UPLOADS_DIR`
+  (`server/uploads`). Keep that directory on persistent disk and include it in
+  backups; a container filesystem without a volume loses product images.
+- With Storage configured, the disk fallback is unused for new uploads and no
+  volume is required. Multiple API instances can run without a shared volume.
+- The service-role key stays on the server; browsers only receive public image
+  URLs.
+- Seed product images live in `server/uploads/seed` and are only needed when the
   development seed is used.
 
 ## 7. Payments and webhooks
@@ -301,24 +336,35 @@ going live; follow [payments.md](payments.md) end to end.
 
 ## 8. Email
 
-With `SMTP_*` configured, receipts, verification and password-reset emails are
-sent immediately. Without SMTP, messages are written to `email_outbox` and
-logged only — acceptable for staging, not for production. Use a provider that
-supports SPF/DKIM for your sending domain, and monitor `ORDER_NOTIFICATION_EMAIL`.
+Two transports are involved:
+
+- **App mail** — receipts, welcome, password-changed notices and admin
+  notifications use `SMTP_*` through Nodemailer. Without SMTP, messages are
+  written to `email_outbox` and logged only — acceptable for staging, not for
+  production.
+- **Auth mail** — verification and password-recovery messages are sent by
+  Supabase. Configure SMTP under **Authentication → SMTP Settings** in the
+  Supabase dashboard and replace the default templates with the `token_hash`
+  links in [supabase.md](supabase.md). The built-in sender is rate limited.
+
+Use a provider that supports SPF/DKIM for your sending domain, and monitor
+`ORDER_NOTIFICATION_EMAIL`.
 
 ## 9. Backups and recovery
 
 - **Database** — nightly `pg_dump -Fc` plus provider PITR if available:
   `pg_dump -Fc --no-owner -f nilemart-$(date +%F).dump "$DATABASE_URL"`.
   Keep copies off-host and test a restore periodically.
-- **Uploads** — snapshot or `rsync` the `backend/uploads` volume alongside each
-  database backup so image references stay valid.
+- **Uploads** — with Supabase Storage, images live in the bucket and are covered
+  by your Supabase storage retention/backup process. With the disk fallback,
+  snapshot or `rsync` the uploads volume alongside each database backup so image
+  references stay valid.
 - **Secrets** — back up `/etc/nilemart.env` in your secrets manager, not in git.
 - **Restore** — restore the database first, then uploads, then start the app.
   Migrations are forward-only; there are no down migrations. To roll back a bad
   release, restore the database backup (or ship a corrective migration) and the
   matching uploads snapshot.
-- PGlite (`backend/data`) is a development engine and is single-process. Do not
+- PGlite (`server/data`) is a development engine and is single-process. Do not
   use it for production traffic, and only copy its directory while the API is
   stopped.
 
@@ -326,8 +372,15 @@ supports SPF/DKIM for your sending domain, and monitor `ORDER_NOTIFICATION_EMAIL
 
 - [ ] HTTPS everywhere; HTTP redirects to HTTPS; HSTS enabled after verification.
 - [ ] Port 4000 unreachable from the internet; only the proxy can connect.
-- [ ] `NODE_ENV=production`, so session cookies are `Secure`/`HttpOnly` and the
-      CSP is active.
+- [ ] `NODE_ENV=production`, so local passwords are refused, session cookies are
+      `Secure`/`HttpOnly` and the CSP is active.
+- [ ] `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` set on
+      the server; the service-role key appears in no frontend bundle or repo file.
+- [ ] Supabase **Site URL** and allowed redirect URLs point at the production
+      `/verify-email` and `/reset-password`; both email templates use
+      `token_hash` links.
+- [ ] Supabase Auth SMTP configured; verification and recovery emails arrive.
+- [ ] Storage bucket is public for reads but has no anonymous write policy.
 - [ ] `REQUIRE_VERIFIED_EMAIL=true` and working transactional email.
 - [ ] `SEED_DEMO_DATA=false`; no demo accounts or catalogue in production.
 - [ ] First admin created with a unique long password; demo seed password unused.
@@ -357,7 +410,7 @@ Run these against production after the first deploy:
 4. Sign in as each staff role and confirm navigation and API access match that
    role; confirm a store manager cannot open staff management even by URL.
 5. As admin, upload a product image and confirm it persists after a service
-   restart.
+   restart (Supabase Storage URL, or the uploads volume).
 6. If Chapa is live, complete the sandbox/live acceptance checklist in
    [payments.md](payments.md), including replay and invalid-signature tests.
 7. Sign out, confirm the session cookie is cleared and protected pages redirect
@@ -368,9 +421,10 @@ Run these against production after the first deploy:
 - Sessions live in PostgreSQL, so the API is stateless across instances; no
   sticky sessions are required.
 - The reservation sweep is safe to run on every instance.
-- Uploaded images are local disk. Multiple instances need a shared volume
-  (read-write) or a future object-storage adapter.
+- With Supabase Storage, uploaded images need no shared volume. The disk fallback
+  requires a shared read-write volume for multiple instances.
 - PostgreSQL connection pools are capped at 10 per API process; size your
-  database connections with the number of instances in mind.
+  database connections with the number of instances in mind. Supabase and Neon
+  pooler limits apply.
 - The storefront and admin are code-split; serve static assets through the proxy
   or a CDN for best results. Keep cache headers intact.

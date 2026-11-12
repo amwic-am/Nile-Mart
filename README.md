@@ -27,13 +27,23 @@ acceptance checklist.
 
 ## Stack
 
-- **Frontend** — React 19, TypeScript, Vite (Rolldown), Tailwind CSS 4,
-  React Router 7, TanStack Query, Zustand, React Hook Form + Zod, Recharts,
-  Lucide icons, self-hosted Inter + Manrope.
-- **Backend** — Node.js 20+, Express 5, Zod, PGlite (development) or PostgreSQL
-  (production) via `pg`.
-- **Data** — ~35 tables, UUID keys, foreign keys, check constraints, indexes,
-  integer santim money, transactional stock and payment flows, PostgreSQL RLS.
+- **Frontend** — React 18, TypeScript, Vite (Rolldown), Tailwind CSS 4,
+  shadcn/ui (Radix + CVA), React Router 7, TanStack Query, Zustand,
+  React Hook Form + Zod, Recharts, Lucide icons, self-hosted Inter + Manrope.
+- **Backend** — Node.js 20+, Express 5, Zod, PGlite (development/tests) or
+  PostgreSQL via `pg`; Supabase Auth through GoTrue and Supabase Storage for
+  uploads.
+- **Data / Auth / Storage** — Supabase (Postgres, Auth, Storage) with row-level
+  security, or the same Postgres schema with local auth for development.
+  ~35 tables, UUID keys, foreign keys, check constraints, indexes, integer
+  santim money, transactional stock and payment flows.
+- **Email** — SMTP via Nodemailer; without SMTP, messages land in `email_outbox`.
+
+Supabase is optional locally: with no `SUPABASE_*` variables the API uses
+embedded PGlite, local scrypt passwords and disk uploads. Set
+`SUPABASE_URL` + `SUPABASE_ANON_KEY` (and `SUPABASE_SERVICE_ROLE_KEY` for
+storage/seeding) to switch to Supabase Auth. See
+[docs/supabase.md](docs/supabase.md).
 
 ## Quick start (development)
 
@@ -46,7 +56,13 @@ npm run dev                   # API on :4000, storefront on :5173
 ```
 
 Open <http://localhost:5173>. On first start the embedded database
-(`backend/data`) is migrated and seeded with demo content.
+(`server/data`) is migrated and seeded with demo content.
+
+To develop against Supabase instead, fill `DATABASE_URL`, `SUPABASE_URL`,
+`SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` in `.env` and follow
+[docs/supabase.md](docs/supabase.md) (auth URL settings, email templates,
+storage bucket, `nilemart_app` grant). Local auth still works without any
+Supabase configuration.
 
 ### Development accounts
 
@@ -72,8 +88,8 @@ production (see [docs/deployment.md](docs/deployment.md)).
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Run API and Vite dev server together |
-| `npm run build` | Type-check and build the frontend, then compile the backend |
-| `npm start` | Run the compiled backend (serves the API, uploads and the built SPA) |
+| `npm run build` | Type-check and build the frontend, then compile the server |
+| `npm start` | Run the compiled server (serves the API, uploads and the built SPA) |
 | `npm run typecheck` | Type-check both workspaces |
 | `npm test` | Integration tests against an isolated temporary PostgreSQL |
 | `npm run db:migrate` | Apply pending migrations |
@@ -93,7 +109,7 @@ frontend/               React storefront + admin SPA
   src/lib/              API client, formatting, SEO, admin query hooks
   src/stores/           Zustand auth and cart stores
   public/               Static assets, favicon, OG image
-backend/
+server/
   migrations/           Numbered SQL: schema, RLS, reference data
   src/routes/           Storefront, auth, cart, checkout, orders, account,
                         wishlist, webhooks, SEO, admin/*
@@ -106,19 +122,26 @@ cloudflare/
 wrangler.jsonc          Worker config: static assets + proxy routes
 docs/
   payments.md           Payment rules, Chapa setup, acceptance checklist
+  supabase.md           Supabase project, auth templates, storage, RLS role
   deployment.md         Production deployment, RLS roles, backups, checklists
-  deploy-vercel.md      Vercel storefront + Railway API + Neon
-  deploy-cloudflare.md  Cloudflare Worker storefront + Railway API + Neon
+  deploy-vercel.md      Vercel storefront + Railway API + Neon/Supabase
+  deploy-cloudflare.md  Cloudflare Worker storefront + Railway API
 ```
 
 ## How the important parts work
 
 ### Authentication and authorisation
 
-- Opaque session tokens stored hashed in the `sessions` table, sent as an
-  `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production). Passwords use
-  scrypt with per-user salts; login errors are generic and attempts are rate
-  limited.
+- Two providers behind `AUTH_PROVIDER`: `supabase` (default when Supabase env
+  vars are present; required in production) creates and verifies credentials in
+  Supabase Auth via the GoTrue REST API from the server, so no Supabase
+  access/refresh token ever reaches browser JavaScript. `local` keeps scrypt
+  passwords in `auth_credentials` and is for development and tests only.
+- Either way the browser gets one opaque session token, stored hashed in the
+  `sessions` table and sent as an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in
+  production). Login errors are generic and attempts are rate limited.
+  Supabase profiles are mirrored into `profiles` with `profiles.id` equal to
+  `auth.users.id`; RLS and permissions are unchanged.
 - Staff access requires both an API guard (`requireStaff`, `requirePerm`) and
   matching PostgreSQL RLS policies. Hiding a button in the UI is never treated
   as security; every admin endpoint re-checks the permission server-side.
@@ -183,21 +206,29 @@ The integration suite starts an isolated temporary PGlite database, applies all
 migrations, seeds it, and exercises health/SEO endpoints, storefront reads, the
 origin guard, session cookie flags, authentication failures, RBAC/RLS
 boundaries for several staff roles, and a full cash-on-delivery checkout
-(stock reservation, totals, idempotent replay). It never touches `backend/data`
-or a `DATABASE_URL` database. Tests run single-file in a single process because
-PGlite is single-process.
+(stock reservation, totals, idempotent replay). Unit tests cover the Supabase
+Auth error mapping and upload image-signature validation. Neither suite touches
+`server/data` or a `DATABASE_URL` database. Tests run single-file in a single
+process because PGlite is single-process.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. The most important variables:
+Copy `.env.example` to `.env`; a root `.env.local` is also loaded and takes
+precedence for local-only settings. The most important variables:
 
 | Variable | Notes |
 | --- | --- |
 | `APP_URL` | Public storefront origin; used for links, SEO, OG tags and origin checks |
 | `API_URL` | Public API origin; used for payment callbacks/webhooks |
-| `DATABASE_URL` | PostgreSQL connection string; empty uses embedded PGlite |
+| `DATABASE_URL` | App PostgreSQL URL (Supabase transaction pooler); empty uses embedded PGlite |
+| `DIRECT_URL` | Optional session-mode PostgreSQL URL used by `npm run db:migrate` |
 | `DATABASE_SSL` | `require` (default when a URL is set), `disable`, `no-verify` |
-| `UPLOADS_DIR` | Upload directory; point at a persistent volume in production |
+| `DATABASE_SSL_CA` | Optional local path to the Supabase root certificate for verified TLS |
+| `AUTH_PROVIDER` | `supabase` or `local`; defaults to `supabase` when Supabase env vars are set, `local` otherwise. Production refuses `local` |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Server-side Supabase Auth; the anon key never reaches the browser |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only: Storage uploads, admin user creation, demo seeding |
+| `SUPABASE_STORAGE_BUCKET` | Public storage bucket for product images (default `product-images`) |
+| `UPLOADS_DIR` | Local upload directory when Storage is not configured; persistent volume in production |
 | `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS` | Session cookie name and lifetime |
 | `SMTP_*`, `MAIL_FROM` | Transactional email; without SMTP, mail is stored in `email_outbox` |
 | `PAYMENTS_COD_ENABLED` | Cash on delivery (default on) |
@@ -212,18 +243,21 @@ Never commit `.env` or real credentials. Only `APP_URL`/`API_URL` are public.
 
 See [docs/deployment.md](docs/deployment.md) for PostgreSQL setup, the
 `nilemart_app` RLS role, first-admin provisioning, reverse proxy/HTTPS, uploads
-persistence, backups, webhook URLs and the go-live checklist. For a Vercel
-storefront with the API on Railway and PostgreSQL on Neon, see
-[docs/deploy-vercel.md](docs/deploy-vercel.md). For Cloudflare Workers (which
-runs `npx wrangler deploy` from the repository root), see
+persistence, backups, webhook URLs and the go-live checklist. For Supabase
+project, auth and storage setup, see [docs/supabase.md](docs/supabase.md). For a
+Vercel storefront with the API on Railway and PostgreSQL on Neon or Supabase,
+see [docs/deploy-vercel.md](docs/deploy-vercel.md). For Cloudflare Workers
+(which runs `npx wrangler deploy` from the repository root), see
 [docs/deploy-cloudflare.md](docs/deploy-cloudflare.md). Short version:
 
 ```bash
 npm ci
 npm run build
 NODE_ENV=production DATABASE_URL=... APP_URL=https://shop.example.com \
-  API_URL=https://shop.example.com npm run db:migrate
-NODE_ENV=production DATABASE_URL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... \
+  API_URL=https://shop.example.com SUPABASE_URL=... SUPABASE_ANON_KEY=... \
+  SUPABASE_SERVICE_ROLE_KEY=... npm run db:migrate
+NODE_ENV=production DATABASE_URL=... SUPABASE_URL=... SUPABASE_ANON_KEY=... \
+  SUPABASE_SERVICE_ROLE_KEY=... ADMIN_EMAIL=... ADMIN_PASSWORD=... \
   npm run db:create-admin
 NODE_ENV=production ... npm start
 ```
